@@ -21,7 +21,8 @@ st.title("🚗 RF-DETR Object Detection")
 # --------------------------------
 @st.cache_resource
 def load_model():
-    return RFDETRNano()
+    model = RFDETRNano()
+    return model
 
 model = load_model()
 
@@ -50,41 +51,43 @@ if input_type == "Image":
 
         st.image(image, caption="Uploaded Image")
 
-        with st.spinner("Detecting Objects..."):
+        if st.button("🚀 Detect Objects"):
 
-            detections = model.predict(image_np)
+            with st.spinner("Detecting Objects..."):
 
-            box_annotator = sv.BoxAnnotator()
+                detections = model.predict(image_np)
 
-            annotated_image = box_annotator.annotate(
-                scene=image_np.copy(),
-                detections=detections
-            )
+                box_annotator = sv.BoxAnnotator()
 
-        st.image(
-            annotated_image,
-            caption="Detection Result"
-        )
-
-        total_objects = len(detections.xyxy)
-
-        st.success(
-            f"🎯 Total Objects Detected: {total_objects}"
-        )
-
-        object_counts = {}
-
-        if "class_name" in detections.data:
-
-            for cls in detections.data["class_name"]:
-                object_counts[cls] = (
-                    object_counts.get(cls, 0) + 1
+                annotated_image = box_annotator.annotate(
+                    scene=image_np.copy(),
+                    detections=detections
                 )
 
-            st.subheader("📊 Object Summary")
+            st.image(
+                annotated_image,
+                caption="Detection Result"
+            )
 
-            for obj, count in object_counts.items():
-                st.write(f"✅ {obj}: {count}")
+            total_objects = len(detections.xyxy)
+
+            st.success(
+                f"🎯 Total Objects Detected: {total_objects}"
+            )
+
+            object_counts = {}
+
+            if "class_name" in detections.data:
+
+                for cls in detections.data["class_name"]:
+                    object_counts[cls] = (
+                        object_counts.get(cls, 0) + 1
+                    )
+
+                st.subheader("📊 Object Summary")
+
+                for obj, count in sorted(object_counts.items()):
+                    st.write(f"✅ {obj}: {count}")
 
 # ==================================================
 # VIDEO DETECTION
@@ -98,34 +101,54 @@ else:
 
     if uploaded_video:
 
+        size_mb = uploaded_video.size / (1024 * 1024)
+
+        st.info(f"Video Size: {size_mb:.1f} MB")
+
+        if size_mb > 100:
+            st.warning(
+                "Large video detected. Processing may take time."
+            )
+
         st.video(uploaded_video)
 
         if st.button("▶ Start Detection"):
 
             with st.spinner(
-                "Processing video... Please wait"
+                "Processing Video..."
             ):
 
                 temp_video = tempfile.NamedTemporaryFile(
-                    delete=False
+                    delete=False,
+                    suffix=".mp4"
                 )
 
                 temp_video.write(
                     uploaded_video.read()
                 )
 
+                temp_video.close()
+
                 cap = cv2.VideoCapture(
                     temp_video.name
                 )
 
                 frame_placeholder = st.empty()
+                progress_bar = st.progress(0)
+
+                total_frames = int(
+                    cap.get(cv2.CAP_PROP_FRAME_COUNT)
+                )
 
                 frame_count = 0
                 processed_frames = 0
 
-                total_detected = {}
+                object_counts = {}
 
                 box_annotator = sv.BoxAnnotator()
+
+                # FAST MODE
+                FRAME_SKIP = 120
 
                 while cap.isOpened():
 
@@ -136,8 +159,14 @@ else:
 
                     frame_count += 1
 
-                    # Fast mode
-                    if frame_count % 60 != 0:
+                    progress = min(
+                        frame_count / max(total_frames, 1),
+                        1.0
+                    )
+
+                    progress_bar.progress(progress)
+
+                    if frame_count % FRAME_SKIP != 0:
                         continue
 
                     processed_frames += 1
@@ -161,11 +190,10 @@ else:
                             "class_name"
                         ]:
 
-                            total_detected[cls] = (
-                                total_detected.get(
+                            object_counts[cls] = (
+                                object_counts.get(
                                     cls, 0
-                                )
-                                + 1
+                                ) + 1
                             )
 
                     annotated_frame = (
@@ -176,7 +204,8 @@ else:
                     )
 
                     frame_placeholder.image(
-                        annotated_frame
+                        annotated_frame,
+                        caption=f"Processed Frame {processed_frames}"
                     )
 
                 cap.release()
@@ -189,7 +218,19 @@ else:
                 "📊 Objects Found In Video"
             )
 
-            if len(total_detected) == 0:
+            total_detected = sum(
+                object_counts.values()
+            )
+
+            st.success(
+                f"🎯 Total Objects Found: {total_detected}"
+            )
+
+            st.success(
+                f"🎬 Frames Processed: {processed_frames}"
+            )
+
+            if len(object_counts) == 0:
 
                 st.warning(
                     "No objects detected."
@@ -198,12 +239,8 @@ else:
             else:
 
                 for obj, count in sorted(
-                    total_detected.items()
+                    object_counts.items()
                 ):
                     st.write(
                         f"✅ {obj}: {count}"
                     )
-
-                st.success(
-                    f"Processed Frames: {processed_frames}"
-                )
