@@ -6,17 +6,29 @@ import supervision as sv
 import cv2
 import tempfile
 
+st.set_page_config(
+    page_title="RF-DETR Object Detection",
+    layout="wide"
+)
+
 st.title("RF-DETR Object Detection")
+
+# Load model only once
+@st.cache_resource
+def load_model():
+    model = RFDETRBase()
+    return model
+
+model = load_model()
 
 option = st.radio(
     "Choose Input Type",
     ["Image", "Video"]
 )
 
-model = RFDETRBase()
-
-# ---------------- IMAGE ----------------
-
+# ==========================
+# IMAGE DETECTION
+# ==========================
 if option == "Image":
 
     uploaded_image = st.file_uploader(
@@ -29,14 +41,16 @@ if option == "Image":
         image = Image.open(uploaded_image).convert("RGB")
         image_np = np.array(image)
 
-        detections = model.predict(image_np)
+        with st.spinner("Detecting objects..."):
 
-        box_annotator = sv.BoxAnnotator()
+            detections = model.predict(image_np)
 
-        annotated_image = box_annotator.annotate(
-            scene=image_np.copy(),
-            detections=detections
-        )
+            box_annotator = sv.BoxAnnotator()
+
+            annotated_image = box_annotator.annotate(
+                scene=image_np.copy(),
+                detections=detections
+            )
 
         st.image(
             annotated_image,
@@ -44,8 +58,17 @@ if option == "Image":
             use_container_width=True
         )
 
-# ---------------- VIDEO ----------------
+        st.subheader("Detected Objects")
 
+        for name, conf in zip(
+            detections.data["class_name"],
+            detections.confidence
+        ):
+            st.write(f"✅ {name} ({conf:.2f})")
+
+# ==========================
+# VIDEO DETECTION
+# ==========================
 if option == "Video":
 
     uploaded_video = st.file_uploader(
@@ -54,6 +77,8 @@ if option == "Video":
     )
 
     if uploaded_video:
+
+        st.info("Processing video... Please wait.")
 
         temp_file = tempfile.NamedTemporaryFile(delete=False)
         temp_file.write(uploaded_video.read())
@@ -64,29 +89,37 @@ if option == "Video":
 
         box_annotator = sv.BoxAnnotator()
 
+        frame_count = 0
 
-    while cap.isOpened():
+        while cap.isOpened():
 
-        ret, frame = cap.read()
+            ret, frame = cap.read()
 
-        if not ret:
-            break
+            if not ret:
+                break
 
-        frame_count += 1
+            frame_count += 1
 
-        if frame_count % 10 != 0:
-            continue
+            # Process only every 10th frame
+            if frame_count % 10 != 0:
+                continue
 
-        detections = model.predict(frame)
+            # Resize frame for faster inference
+            frame = cv2.resize(frame, (640, 480))
 
-        annotated_frame = box_annotator.annotate(
-            scene=frame.copy(),
-            detections=detections
-    )
+            detections = model.predict(frame)
 
-    stframe.image(
-        annotated_frame,
-        channels="BGR",
-        use_container_width=True
-    )
+            annotated_frame = box_annotator.annotate(
+                scene=frame.copy(),
+                detections=detections
+            )
+
+            stframe.image(
+                annotated_frame,
+                channels="BGR",
+                use_container_width=True
+            )
+
         cap.release()
+
+        st.success("Video processing completed!")
