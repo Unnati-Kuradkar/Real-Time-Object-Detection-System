@@ -1,12 +1,23 @@
 import streamlit as st
 import numpy as np
-from PIL import Image
 import cv2
 import tempfile
+from PIL import Image
 import supervision as sv
-from rfdetr import RFDETRNano
 import torch
 
+from rfdetr import RFDETRNano
+
+st.set_page_config(
+    page_title="RF-DETR Object Detection",
+    layout="wide"
+)
+
+st.title("🚗 RF-DETR Object Detection")
+
+# ----------------------------
+# Load Model Only Once
+# ----------------------------
 @st.cache_resource
 def load_model():
     model = RFDETRNano()
@@ -20,38 +31,30 @@ def load_model():
 
     return model
 
-model = load_model()
-
-st.title("🚗 RF-DETR Object Detection")
-
-# =========================
-# LOAD MODEL ONCE
-# =========================
-@st.cache_resource
-def load_model():
-    model = RFDETRNano()
-    return model
 
 model = load_model()
 
+# ----------------------------
+# Mode Selection
+# ----------------------------
 option = st.radio(
     "Choose Input Type",
     ["Image", "Video"]
 )
 
-# ==================================================
+# =====================================================
 # IMAGE DETECTION
-# ==================================================
+# =====================================================
 if option == "Image":
 
-    uploaded_image = st.file_uploader(
+    uploaded_file = st.file_uploader(
         "Upload Image",
         type=["jpg", "jpeg", "png"]
     )
 
-    if uploaded_image:
+    if uploaded_file:
 
-        image = Image.open(uploaded_image).convert("RGB")
+        image = Image.open(uploaded_file).convert("RGB")
         image_np = np.array(image)
 
         st.image(
@@ -79,15 +82,20 @@ if option == "Image":
 
         st.subheader("Detected Objects")
 
-        for name, conf in zip(
-            detections.data["class_name"],
-            detections.confidence
-        ):
-            st.write(f"✅ {name} ({conf:.2f})")
+        try:
+            for name, conf in zip(
+                detections.data["class_name"],
+                detections.confidence
+            ):
+                st.write(
+                    f"✅ {name} ({conf:.2f})"
+                )
+        except:
+            st.info("Objects detected")
 
-# ==================================================
+# =====================================================
 # VIDEO DETECTION
-# ==================================================
+# =====================================================
 else:
 
     uploaded_video = st.file_uploader(
@@ -101,27 +109,28 @@ else:
 
         if st.button("Start Detection"):
 
-            temp_file = tempfile.NamedTemporaryFile(
+            with tempfile.NamedTemporaryFile(
                 delete=False,
                 suffix=".mp4"
-            )
+            ) as tmp_file:
 
-            temp_file.write(uploaded_video.read())
-            temp_file.close()
+                tmp_file.write(
+                    uploaded_video.read()
+                )
 
-            cap = cv2.VideoCapture(temp_file.name)
+                video_path = tmp_file.name
+
+            cap = cv2.VideoCapture(video_path)
 
             frame_placeholder = st.empty()
-            progress_bar = st.progress(0)
 
             frame_count = 0
-            processed_frames = 0
-            MAX_FRAMES = 100
 
-            box_annotator = sv.BoxAnnotator()
+            # Process every 60th frame
+            frame_skip = 60
 
             st.info(
-                "Fast Mode: Processing every 60th frame"
+                "⚡ Fast Mode Enabled"
             )
 
             while cap.isOpened():
@@ -133,49 +142,34 @@ else:
 
                 frame_count += 1
 
-                # Skip most frames
-                if frame_count % 60 != 0:
+                if frame_count % frame_skip != 0:
                     continue
-
-                processed_frames += 1
-
-                if processed_frames > MAX_FRAMES:
-                    break
 
                 frame_rgb = cv2.cvtColor(
                     frame,
                     cv2.COLOR_BGR2RGB
                 )
 
-                # Resize for speed
-                frame_rgb = cv2.resize(
-                    frame_rgb,
-                    (640, 360)
-                )
-
                 detections = model.predict(
                     frame_rgb
                 )
 
-                annotated = box_annotator.annotate(
-                    scene=frame_rgb.copy(),
-                    detections=detections
+                box_annotator = sv.BoxAnnotator()
+
+                annotated_frame = (
+                    box_annotator.annotate(
+                        scene=frame_rgb.copy(),
+                        detections=detections
+                    )
                 )
 
                 frame_placeholder.image(
-                    annotated,
+                    annotated_frame,
                     width="stretch"
-                )
-
-                progress_bar.progress(
-                    min(
-                        processed_frames / MAX_FRAMES,
-                        1.0
-                    )
                 )
 
             cap.release()
 
             st.success(
-                f"Detection Complete! Processed {processed_frames} frames."
+                "✅ Detection Complete"
             )
