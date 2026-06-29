@@ -221,7 +221,7 @@ if input_type == "Video":
                     frame_count += 1
 
                     # Fast Processing
-                    if frame_count % 120 != 0:
+                   if frame_count % 10 != 0:
                         continue
 
                     processed_frames += 1
