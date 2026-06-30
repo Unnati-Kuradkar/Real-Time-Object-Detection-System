@@ -3,6 +3,7 @@ import numpy as np
 from PIL import Image
 from rfdetr import RFDETRNano
 import supervision as sv
+from supervision.tracker.byte_tracker import ByteTrack
 import cv2
 import tempfile
 
@@ -203,13 +204,15 @@ if input_type == "Video":
 
                 frame_placeholder = st.empty()
 
-                frame_count = 0
-                processed_frames = 0
+               frame_count = 0
+               processed_frames = 0
 
-                total_detected = {}
+               unique_objects = {}
 
-                box_annotator = sv.BoxAnnotator()
-                label_annotator = sv.LabelAnnotator()
+               tracker = ByteTrack()
+
+               box_annotator = sv.BoxAnnotator()
+               label_annotator = sv.LabelAnnotator()
 
                 while cap.isOpened():
 
@@ -239,6 +242,9 @@ if input_type == "Video":
                     detections = model.predict(
                         frame_rgb
                     )
+                    detections = tracker.update_with_detections(
+                        detections
+                    )
 
                     labels = []
 
@@ -255,12 +261,20 @@ if input_type == "Video":
                             )
                         ]
 
-                        for cls in detections.data["class_name"]:
+                        for cls, track_id in zip(
+                            detections.data["class_name"],
+                            detections.tracker_id
+                        ):
 
-                            total_detected[cls] = (
-                                total_detected.get(cls, 0)
-                                + 1
-                            )
+                        if track_id is None:
+                            continue
+
+                        if cls not in unique_objects:
+                            unique_objects[cls] = set()
+
+                        unique_objects[cls].add(
+                            int(track_id)
+                        )
 
                     annotated_frame = box_annotator.annotate(
                         scene=frame_rgb.copy(),
@@ -288,25 +302,26 @@ if input_type == "Video":
                 "📊 Objects Found In Video"
             )
 
-            if len(total_detected) == 0:
-
+            if len(unique_objects) == 0:
                 st.warning(
-                    "No Objects Detected"
-                )
+                "No Objects Detected"
+            )
 
             else:
 
-                total_objects = sum(
-                    total_detected.values()
-                )
+            total_unique = 0
 
-                st.success(
-                    f"🎯 Total Objects Detected: {total_objects}"
-                )
+            for ids in unique_objects.values():
+                total_unique += len(ids)
 
-                for obj, count in sorted(
-                    total_detected.items()
-                ):
-                    st.write(
-                        f"✅ {obj}: {count}"
-                    )
+            st.success(
+                f"🎯 Total Unique Objects: {total_unique}"
+            )
+
+            for obj, ids in sorted(
+                unique_objects.items()
+            ):
+
+            st.write(
+                f"✅ {obj}: {len(ids)}"
+            )
