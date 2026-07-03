@@ -275,7 +275,7 @@ if input_type == "Video":
                     ):
 
                         labels = [
-                            f"{model.names[class_id]} ID:{tracker_id}"
+                            f"Class {class_id} ID:{tracker_id}"
                             for class_id, tracker_id in zip(
                                 detections.class_id,
                                 detections.tracker_id
