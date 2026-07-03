@@ -259,7 +259,7 @@ if input_type == "Video":
 
                     # Remove low confidence detections
                     detections = detections[
-                        detections.confidence > 0.5
+                        detections.confidence > 0.80
                     ]
 
                     # Tracking
@@ -275,11 +275,11 @@ if input_type == "Video":
                     ):
 
                         labels = [
-                            f"{cls} {conf:.2f}"
-                            for cls, conf in zip(
-                                detections.data["class_name"],
-                                detections.confidence
-                            )
+                            f"{model.names[class_id]} ID:{tracker_id}"
+                            for class_id, tracker_id in zip(
+                                detections.class_id,
+                                detections.tracker_id
+                                )
                         ]
 
                         for cls, track_id in zip(
